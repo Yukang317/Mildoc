@@ -1,0 +1,52 @@
+# 🔒 核心安全规则
+**/.env
+**/.env.*
+*.env
+**/secret*
+**/key*
+
+# ☁️ 屏蔽云服务配置文件（含阿里云密钥）
+**/docker-compose.yml
+**/docker-compose.*.yml
+
+# 🐍 Python 缓存 & 字节码
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# 📦 虚拟环境
+.venv/
+**/.venv/
+venv/
+env/
+
+# 🏗️ 构建打包文件
+build/
+dist/
+*.egg-info/
+
+# 🧪 测试/工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 💻 IDE / 编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+
+# 📝 日志 & 临时文件
+*.log
+*.tmp
+*.temp
+
+# 🪟 系统垃圾文件
+.DS_Store
+Thumbs.db
