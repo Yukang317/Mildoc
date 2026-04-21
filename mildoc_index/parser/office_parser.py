@@ -1,6 +1,6 @@
 import os, sys
 from io import BytesIO
-from markitdown import MarkItDown
+from markitdown import MarkItDown   # 用于解析 Office 文档（Word、Excel、PowerPoint）为 Markdown 格式
 
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,15 +17,15 @@ class OfficeParser(DocumentParser):
     
     def __init__(self):
         """初始化markitdown实例"""
-        self.markitdown = MarkItDown(enable_plugins=False)
+        self.markitdown = MarkItDown(enable_plugins=False)  # 禁用插件，提高性能
     
     def parse(self, data: bytes) -> str:
         """解析Office文档"""
         try:
-            # 使用BytesIO创建文件类对象
+            # 使用BytesIO创建文件类对象，返回一个 BytesID 类的实例，是一个内存中的二进制流对象
             file_stream = BytesIO(data)
             
-            # 使用markitdown的convert_stream方法解析
+            # 使用markitdown的convert_stream方法解析 - 用于将文件流转换为结构化对象，自动检测文件类型，包含文本内容、元数据等信息
             result = self.markitdown.convert_stream(file_stream)
             
             if result and hasattr(result, 'text_content'):

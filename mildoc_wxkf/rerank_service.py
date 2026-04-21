@@ -4,21 +4,18 @@
 支持多个重排序服务提供商：
 - 阿里百炼平台 (dashscope)
 - 硅基流动平台 (siliconflow)
-
-作者：开发工程师
-日期：2025年01月
 """
 
 import logging
-import requests
+import requests # 导入requests库，这是Python里最著名的发HTTP网络请求的库（相当于浏览器发请求）
 import json
-from enum import Enum
+from enum import Enum   # 创建“只能选固定几个值”的特殊变量类类型
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel # 导入数据打包盒，用来规范返回的数据长什么样
 from config import Config
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO) # 全局日志级别为INFO，只打印重要信息，不打印废话
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +30,7 @@ class RerankDocument(BaseModel):
     index: int  # 原始文档索引
     content: str  # 文档内容
     relevance_score: float  # 相关性分数
-    metadata: Optional[Dict[str, Any]] = None  # 元数据
+    metadata: Optional[Dict[str, Any]] = None  # 元数据，可选
 
 
 class RerankResponse(BaseModel):
@@ -64,6 +61,7 @@ class RerankService:
         self.endpoint = endpoint
         logger.info(f"重排序服务初始化完成: provider={provider.value}, model={model_name}, endpoint={self.endpoint}")
     
+    # 对外暴露的核心方法
     def rerank_documents(self, query: str, documents: List[str], top_n: Optional[int] = None) -> RerankResponse:
         """重排序文档
         
@@ -110,16 +108,18 @@ class RerankService:
     
     def _rerank_dashscope(self, query: str, documents: List[str], top_n: Optional[int] = None) -> RerankResponse:
         """阿里百炼平台重排序"""
+        # 请求头
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {self.api_key}",  # 身份验证
+            "Content-Type": "application/json"          # 请求体为JSON格式，别让服务器当作普通文本思密达
         }
         
+        # 请求体
         data = {
             "model": self.model_name,
             "input": {
                 "query": query,
-                "documents": documents
+                "documents": documents  # 文档列表
             },
             "parameters": {
                 "return_documents": True,  # 显式设置返回文档内容
@@ -128,24 +128,26 @@ class RerankService:
         }
         
         logger.debug(f"🌐 发送请求到百炼平台: {self.endpoint}")
-        response = requests.post(self.endpoint, headers=headers, json=data, timeout=30)
-        response.raise_for_status()
+        response = requests.post(self.endpoint, headers=headers, json=data, timeout=30) # 30s
+        response.raise_for_status()  # 检查网络状态码，如果厂家返回404或者500错误，直接抛出异常进入上面的except
         
         result = response.json()
-        logger.debug(f"📨 百炼平台响应: {json.dumps(result, ensure_ascii=False)[:200]}...")
+        logger.debug(f"📨 百炼平台响应: {json.dumps(result, ensure_ascii=False)[:200]}...") # 保证中文不乱码，截取前200字符保证日志不爆炸
         
         # 解析响应
         rerank_docs = []
+        # 防御性编程：先检查厂家返回的字典里有没有这两层钥匙，没有说明格式大错特错
         if "output" in result and "results" in result["output"]:
             for item in result["output"]["results"]:
                 # 百炼平台返回格式: document.text
                 document = item.get("document", {})
+                # 如果document是字典，就拿里面的text；如果它发神经发了别的类型，就强制转成字符串
                 content = document.get("text", "") if isinstance(document, dict) else str(document)
                 
                 rerank_doc = RerankDocument(
                     index=item.get("index", 0),
-                    content=content,
-                    relevance_score=float(item.get("relevance_score", 0.0))
+                    content=content,        # 内容
+                    relevance_score=float(item.get("relevance_score", 0.0)) # 相关性分数
                 )
                 rerank_docs.append(rerank_doc)
         else:
@@ -168,7 +170,7 @@ class RerankService:
         data = {
             "model": self.model_name,
             "query": query,
-            "documents": documents,
+            "documents": documents,   # 文档列表
             "return_documents": True  # 硅基流动需要明确指定返回文档内容
         }
         
@@ -185,11 +187,11 @@ class RerankService:
         
         # 解析响应
         rerank_docs = []
-        if "results" in result:
+        if "results" in result:  # 注意这里！硅基流动的返回结果直接就在result里，没有output这一层嵌套！
             for item in result["results"]:
                 # 硅基流动平台返回格式: document.text
                 document = item.get("document", {})
-                content = document.get("text", "") if isinstance(document, dict) else str(document)
+                content = document.get("text", "") if isinstance(document, dict) else str(document) # 提取文本内容
                 
                 rerank_doc = RerankDocument(
                     index=item.get("index", 0),
@@ -211,10 +213,10 @@ class RerankService:
         """健康检查"""
         status = {
             "service": "RerankService",
-            "provider": self.provider.value,
+            "provider": self.provider.value,    
             "model": self.model_name,
-            "endpoint": self.endpoint,
-            "status": "unknown"
+            "endpoint": self.endpoint,      # 请求的网址
+            "status": "unknown"             # 当前状态：未知
         }
         
         try:
@@ -239,6 +241,7 @@ class RerankService:
         return status
 
 
+# 工厂函数，专门负责“生产”重排服务实例
 def create_rerank_service() -> Optional[RerankService]:
     """创建重排序服务实例（工厂函数）
     
@@ -247,7 +250,7 @@ def create_rerank_service() -> Optional[RerankService]:
     """
     try:
         # 检查配置
-        if not Config.RERANK_PROVIDER:
+        if not Config.RERANK_PROVIDER:  # 厂商未配置
             logger.info("未配置RERANK_PROVIDER，跳过重排序服务初始化")
             return None
         
@@ -261,6 +264,8 @@ def create_rerank_service() -> Optional[RerankService]:
         
         # 创建提供商枚举
         try:
+            # 配置文件里是字符串，代码里是：“self.provider == RerankProvider.DASHSCOPE”，这是在拿枚举对象和对象比。需要转换：
+            #       它把字符串 "dashscope" 扔进了枚举类里。枚举类会去自己的菜单里找，如果找到了，就返回对应的枚举对象赋给provider
             provider = RerankProvider(Config.RERANK_PROVIDER.lower())
         except ValueError:
             logger.error(f"不支持的重排序提供商: {Config.RERANK_PROVIDER}")
@@ -271,7 +276,7 @@ def create_rerank_service() -> Optional[RerankService]:
             provider=provider,
             api_key=Config.RERANK_API_KEY,
             model_name=Config.RERANK_MODEL_NAME,
-            endpoint=Config.RERANK_ENDPOINT
+            endpoint=Config.RERANK_ENDPOINT         # 传入网址（可能为空）
         )
         
         logger.info(f"重排序服务创建成功: {provider.value}")
@@ -282,14 +287,16 @@ def create_rerank_service() -> Optional[RerankService]:
         return None
 
 
-# 全局重排序服务实例
+# 全局重排序服务实例，在文件最外层定义一个全局变量，当做专门放重排服务对象的“单间”，初始为空
 _rerank_service_instance = None
 
 def get_rerank_service() -> Optional[RerankService]:
     """获取重排序服务实例（单例模式）"""
     global _rerank_service_instance
     
+    # 如果单间里是空的（说明还没造过这个对象）
     if _rerank_service_instance is None:
+        # 调用上面的工厂函数造一个，塞进单间里
         _rerank_service_instance = create_rerank_service()
     
     return _rerank_service_instance

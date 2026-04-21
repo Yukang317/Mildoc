@@ -67,11 +67,11 @@ def main():
         
         # 根据模式执行相应操作
         if args.mode == "full-refresh":
-            logger.info("\n执行全量刷新模式...")
+            logger.info("\n执行全量刷新模式...")    # 重建整个索引，处理所有文档
             listener.full_update()
             
         elif args.mode == "backfill":
-            logger.info("\n执行排查补漏模式...")
+            logger.info("\n执行排查补漏模式...")    # 检查并处理可能遗漏的文档
             listener.backfill_update()
             
         elif args.mode == "listen":

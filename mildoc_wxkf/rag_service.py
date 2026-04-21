@@ -2,17 +2,17 @@
 RAG服务工具类 (基于LangChain实现)
 
 使用LangChain + Milvus实现RAG服务
-支持从Milvus向量数据库检索相关文档并通过大模型生成回答
+支持从Milvus向量数据库检索相关文档并通过大模型生成回答、重排序、健康检查和场景检测
 
 """
 
 import logging
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
-from langchain_milvus import Milvus
-from langchain_openai import ChatOpenAI
-from langchain_community.callbacks.manager import get_openai_callback
-from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
+from pydantic import BaseModel                  # 导入数据模型基类
+from langchain_milvus import Milvus             # 导入LangChain的Milvus集成
+from langchain_openai import ChatOpenAI         # 导入OpenAI聊天模型
+from langchain_community.callbacks.manager import get_openai_callback       # 导入OpenAI回调管理器
+from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler   # 导入Langfuse回调处理程序
 from config import Config
 from rerank_service import get_rerank_service
 
@@ -23,28 +23,28 @@ langfuse_handler = LangfuseCallbackHandler()
 
 class SourceDocument(BaseModel):
     """源文档信息模型"""
-    doc_name: str  # 文档名称
-    doc_path_name: str  # 文档完整路径
-    doc_type: str  # 文档类型
-    content_preview: str  # 内容预览（前200字符）
-    similarity_score: Optional[float] = None  # 相似度分数
+    doc_name: str                               # 文档名称
+    doc_path_name: str                          # 文档完整路径
+    doc_type: str                               # 文档类型
+    content_preview: str                        # 内容预览（前200字符）
+    similarity_score: Optional[float] = None    # 相似度分数
 
 
 class TokenUsage(BaseModel):
     """Token使用情况模型"""
-    prompt_tokens: int  # 输入token数
-    completion_tokens: int  # 输出token数
-    total_tokens: int  # 总token数
+    prompt_tokens: int                          # 输入token数
+    completion_tokens: int                      # 输出token数
+    total_tokens: int                           # 总token数
 
 
 class RAGResponse(BaseModel):
     """RAG服务响应模型"""
-    content: str  # 大模型回复给用户的文本内容
-    source_documents: List[SourceDocument]  # 检索使用的源文档列表
-    token_usage: Optional[TokenUsage] = None  # token使用情况
-    success: bool = True  # 查询是否成功
-    error_message: Optional[str] = None  # 错误信息
-    scene_info: Optional[Dict[str, Any]] = None  # 场景检测信息
+    content: str                                    # 大模型回复给用户的文本内容
+    source_documents: List[SourceDocument]          # 检索使用的源文档列表
+    token_usage: Optional[TokenUsage] = None        # token使用情况
+    success: bool = True                            # 查询是否成功
+    error_message: Optional[str] = None             # 错误信息 
+    scene_info: Optional[Dict[str, Any]] = None     # 场景检测信息
 
 
 class RAGService:
@@ -98,9 +98,9 @@ class RAGService:
     
     def __init__(self):
         """初始化RAG服务"""
-        self.vector_store = None
-        self.embeddings = None
-        self.llm = None
+        self.vector_store = None    # 向量存储实例
+        self.embeddings = None      # 嵌入模型
+        self.llm = None             # 大语言模型
         self.rerank_service = None  # 重排序服务
         self._initialize_components()
     
@@ -128,7 +128,7 @@ class RAGService:
     def _initialize_embeddings(self):
         """初始化嵌入模型"""
         try:
-            # 使用自定义嵌入类，兼容OpenAI API
+            # 使用自定义嵌入类，兼容OpenAI API。原生的类有时候不兼容国内的大模型API接口
             from openai import OpenAI
             
             class CustomEmbeddings:
@@ -137,8 +137,9 @@ class RAGService:
                     self.client = OpenAI(api_key=api_key, base_url=api_base)
                     self.dimensions = dimensions
                 
-                def embed_query(self, text: str) -> List[float]:
+                def embed_query(self, text: str) -> List[float]:    # 单条文本变成向量
                     """嵌入单个查询"""
+                    # 直接调用下面的批量方法，把单条文本装进列表，返回结果后取第0个
                     return self.embed_documents([text])[0]
                 
                 def embed_documents(self, texts: List[str]) -> List[List[float]]:
@@ -148,22 +149,23 @@ class RAGService:
                             model=self.model_name,
                             input=texts,
                             dimensions=self.dimensions,
-                            encoding_format="float"
+                            encoding_format="float"     # 指定返回格式是普通的浮点数列表
                         )
                         return [data.embedding for data in response.data]
                     except Exception as e:
                         logger.error(f"嵌入生成失败: {e}")
                         raise
             
+            # 实例化上面的自定义类
             self.embeddings = CustomEmbeddings(
                 model_name=Config.LLM_EMBEDDING_MODEL_NAME,
                 api_key=Config.LLM_EMBEDDING_API_KEY,
                 api_base=Config.LLM_EMBEDDING_BASE_URL,
-                dimensions=Config.MILVUS_VECTOR_DIM
+                dimensions=Config.MILVUS_VECTOR_DIM     # 记得要和Milvus数据库建表时规定的维度相同
             )
             
             # 测试嵌入模型
-            test_embedding = self.embeddings.embed_query("测试")
+            test_embedding = self.embeddings.embed_query("测试")     # 随便造一句话测试一下这个模型能不能跑通
             actual_dim = len(test_embedding)
             
             logger.info(f"嵌入模型初始化成功: {Config.LLM_EMBEDDING_MODEL_NAME}")
@@ -183,8 +185,8 @@ class RAGService:
                 model=Config.LLM_MODEL_NAME,
                 openai_api_key=Config.LLM_API_KEY,
                 openai_api_base=Config.LLM_BASE_URL,
-                temperature=0.1,
-                max_tokens=800  # 调整为800，平衡详细度和简洁性
+                temperature=0.1,    # 当客服需要严谨
+                max_tokens=800      # 调整为800，平衡详细度和简洁性
             )
             
             logger.info(f"大语言模型初始化成功: {Config.LLM_MODEL_NAME}")
@@ -198,9 +200,9 @@ class RAGService:
         try:
             # 构建Milvus连接参数
             connection_args = {
-                "host": Config.MILVUS_HOST,
-                "port": Config.MILVUS_PORT,
-                "db_name": Config.MILVUS_DATABASE
+                "host": Config.MILVUS_HOST, # 数据库的IP地址
+                "port": Config.MILVUS_PORT, # 数据库的端口号
+                "db_name": Config.MILVUS_DATABASE # 要连接的数据库的名称
             }
             
             # 如果有用户名和密码，添加到连接参数中
@@ -211,21 +213,21 @@ class RAGService:
             
             # 配置搜索参数，针对IVF_FLAT索引优化
             search_params = {
-                "metric_type": "COSINE",  # 与索引保持一致
+                "metric_type": "COSINE",  # 与索引保持一致，余弦相似度（只看方向一致否）
                 "params": {
-                    "nprobe": 64  # 建议设置为nlist的6.25% (64/1024)，平衡性能和召回率
+                    "nprobe": 64  # 搜索时要抽查的区域数量，建议设置为nlist的6.25% (64/1024)，平衡性能和召回率
                 }
             }
             
-            # 初始化Milvus向量存储
+            # 初始化Milvus向量存储，创建LangChain的Milvus数据库操作对象
             self.vector_store = Milvus(
                 embedding_function=self.embeddings,
                 collection_name=Config.MILVUS_COLLECTION_NAME,
-                connection_args=connection_args,
-                text_field="content",  # 文本内容字段
-                vector_field="content_vector",  # 向量字段
-                auto_id=True,
-                search_params=search_params  # 添加搜索参数
+                connection_args=connection_args,    # Milvus连接参数
+                text_field="content",               # 文本内容字段
+                vector_field="content_vector",      # 向量字段
+                auto_id=True,                       # 自动生成ID
+                search_params=search_params         # 添加搜索策略参数
             )
             
             logger.info(f"Milvus向量存储初始化成功: {Config.MILVUS_COLLECTION_NAME}")
@@ -262,10 +264,11 @@ class RAGService:
         try:
             logger.info(f"🔍 开始处理查询（rerank={use_rerank}): {query}")
             
+            # 判断如果问题为空，或者只是一堆空格
             if not query or not query.strip():
                 return RAGResponse(
                     content="请输入有效的查询内容",
-                    source_documents=[],
+                    source_documents=[],    # 没有参考文档
                     success=False,
                     error_message="查询内容为空"
                 )
@@ -275,10 +278,10 @@ class RAGService:
             scene_info = None # 暂时不使用场景检测
             
             # 第一步：向量检索获取候选文档
-            initial_k = 10 if use_rerank and self.rerank_service else 3
-            retriever = self.vector_store.as_retriever(
-                search_type="similarity",
-                search_kwargs={"k": initial_k}
+            initial_k = 10 if use_rerank and self.rerank_service else 3  # 重排则检索10个，否则3个
+            retriever = self.vector_store.as_retriever(  # 检索器
+                search_type="similarity",   # 方式选择相似度检索
+                search_kwargs={"k": initial_k}  # 指定检索数量
             )
             
             # 获取候选文档
@@ -286,9 +289,10 @@ class RAGService:
             logger.info(f"📄 初始检索到 {len(candidate_docs)} 个候选文档")
             
             # 第二步：重排序（如果启用）
-            final_docs = candidate_docs
+            final_docs = candidate_docs  # 无重排序则为最终检索后的文档
+            # 开启重排、有重排工具、候选文档数>1时，执行重排序
             if use_rerank and self.rerank_service and len(candidate_docs) > 1:
-                # 提取文档内容用于重排序
+                # 提取文档内容（纯文本）用于重排序
                 doc_contents = [doc.page_content for doc in candidate_docs]
                 
                 # 增加重排序的top_n数量，确保不会过滤掉高相关度文档
@@ -298,36 +302,42 @@ class RAGService:
                 rerank_response = self.rerank_service.rerank_documents(
                     query=query,
                     documents=doc_contents,
-                    top_n=rerank_top_n
+                    top_n=rerank_top_n      # 留几个
                 )
                 
                 if rerank_response.success:
                     # 根据重排序结果重新排列文档
                     reranked_docs = []
-                    for rerank_doc in rerank_response.documents:
+                    for rerank_doc in rerank_response.documents:    # 遍历重排服务返回的文档打分信息
+                        # 安全检查：确保它返回的索引没有越界
                         if 0 <= rerank_doc.index < len(candidate_docs):
+                            # 根据索引，去原来的候选文档列表里把完整的文档对象（包含元数据）捞出来
                             original_doc = candidate_docs[rerank_doc.index]
                             # 将相关性分数添加到元数据中
-                            if hasattr(original_doc, 'metadata'):
+                            if hasattr(original_doc, 'metadata'): # 如果这个文档对象有metadata（元数据）这个属性
+                                # 把重排模型算出的新分数，偷偷塞进元数据字典里
                                 original_doc.metadata['rerank_score'] = rerank_doc.relevance_score
                             reranked_docs.append(original_doc)
                     
                     # 安全检查：确保原始最高相似度文档不会被完全过滤掉
                     # 如果原始第1个文档不在重排序结果中，将其添加到结果中
                     if candidate_docs and len(reranked_docs) > 0:
-                        first_doc = candidate_docs[0]
+                        first_doc = candidate_docs[0] # 拿出原来向量搜索时的第1名（向量相似度最高的）
+                        # 判断这个原向量搜索的第1名是否在重排后的列表里
                         first_doc_in_rerank = any(
+                            # 比对文档名字和内容
                             hasattr(doc, 'metadata') and 
                             doc.metadata.get('doc_name') == first_doc.metadata.get('doc_name') and
                             doc.page_content == first_doc.page_content
                             for doc in reranked_docs
                         )
                         
+                        # 如果向量搜索的第一名被重排序踢出去
                         if not first_doc_in_rerank:
                             # 将原始最高相似度文档添加到重排序结果的开头
-                            if hasattr(first_doc, 'metadata'):
+                            if hasattr(first_doc, 'metadata'):  # 安全检查
                                 first_doc.metadata['rerank_score'] = 1.0  # 给予最高分数
-                            reranked_docs.insert(0, first_doc)
+                            reranked_docs.insert(0, first_doc)  # 插到重排结果的第一个位置
                             logger.info(f"🔒 安全检查：将原始最高相似度文档添加到重排序结果中")
                     
                     final_docs = reranked_docs[:3]  # 最终仍然只取前3个
@@ -336,6 +346,7 @@ class RAGService:
                     logger.warning(f"重排序失败，使用原始检索结果: {rerank_response.error_message}")
             
             # 第三步：使用选定的文档生成回答
+            # 开启一个神奇的上下文管理器，它会像间谍一样暗中记录大模型消耗了多少token，以及每个token的类型
             with get_openai_callback() as cb:  ## 在上下文中获取 OpenAI 回调处理器，方便地公开令牌和成本信息
                 # 构建上下文
                 context = "\n\n".join([doc.page_content for doc in final_docs])
@@ -343,12 +354,13 @@ class RAGService:
                 # 使用统一的提示模板生成回答
                 prompt = self.PROMPT_TEMPLATE.format(context=context, question=query)
 
-                if (Config.LANGFUSE_ENABLE):
+                if (Config.LANGFUSE_ENABLE): # 检查配置，看是不是开了Langfuse监控平台
+                    # 如果开了，就把监控handler传进去，顺便把回答的纯文本抽出来
                     answer = self.llm.invoke(prompt, config={"callbacks":[langfuse_handler]}).content
                 else:
                     answer = self.llm.invoke(prompt).content
             
-            # 更新文档引用为最终选择的文档
+            # 更新文档引用为最终选择的文档，后续用于前端展示
             source_documents = final_docs
             
             logger.info(f"✅ 查询完成，检索到 {len(source_documents)} 个相关文档")
@@ -356,19 +368,20 @@ class RAGService:
             logger.info(f"💰 Token使用: 输入{cb.prompt_tokens}, 输出{cb.completion_tokens}, 总计{cb.total_tokens}")
             
             # 处理源文档信息
-            processed_source_docs = []
+            processed_source_docs = []  # 源文档信息需要格式转换后被规范
             for i, doc in enumerate(source_documents):
                 try:
                     # 提取文档元数据
-                    metadata = doc.metadata if hasattr(doc, 'metadata') else {}
-                    doc_name = metadata.get("doc_name", f"文档{i+1}")
-                    doc_path_name = metadata.get("doc_path_name", "")
-                    doc_type = metadata.get("doc_type", "unknown")
-                    rerank_score = metadata.get("rerank_score")
+                    metadata = doc.metadata if hasattr(doc, 'metadata') else {} # 元数据字典
+                    doc_name = metadata.get("doc_name", f"文档{i+1}")           # 文档名称，默认是第i个文档
+                    doc_path_name = metadata.get("doc_path_name", "")          # 文档路径名称，默认为空
+                    doc_type = metadata.get("doc_type", "unknown")             # 文档类型，默认是unknown
+                    rerank_score = metadata.get("rerank_score", None)          # 重排分数，默认是None
                     
-                    # 获取内容预览
+                    # 获取内容预览，截取前200个字，超过的话在末尾加上省略号
                     content_preview = doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
                     
+                    # 按照之前定义的数据模型，创建一个规范的源文档对象
                     source_doc = SourceDocument(
                         doc_name=doc_name,
                         doc_path_name=doc_path_name,
@@ -378,13 +391,14 @@ class RAGService:
                     )
                     processed_source_docs.append(source_doc)
                     
+                    # 拼接日志用的分数字符串，保留3位小数
                     score_info = f" (rerank: {rerank_score:.3f})" if rerank_score else ""
                     logger.info(f"📖 文档{i+1}: {doc_name}{score_info} - {content_preview[:50]}...")
                     
                 except Exception as e:
                     logger.warning(f"处理源文档{i+1}时出错: {e}")
                     # 添加默认文档信息
-                    processed_source_docs.append(SourceDocument(
+                    processed_source_docs.append(SourceDocument( # 往列表里塞一个默认的残次品文档信息，保证列表长度对得上
                         doc_name=f"文档{i+1}",
                         doc_path_name="",
                         doc_type="unknown",
@@ -393,24 +407,24 @@ class RAGService:
             
             # 构建token使用情况
             token_usage = TokenUsage(
-                prompt_tokens=cb.prompt_tokens,
-                completion_tokens=cb.completion_tokens,
+                prompt_tokens=cb.prompt_tokens,         # 从cd间谍那里拿输入token
+                completion_tokens=cb.completion_tokens, # 输出token
                 total_tokens=cb.total_tokens
             )
             
             return RAGResponse(
                 content=answer if answer else "抱歉，我无法根据现有信息回答您的问题。",
-                source_documents=processed_source_docs,
-                token_usage=token_usage,
+                source_documents=processed_source_docs, # 处理好的源文档列表
+                token_usage=token_usage,                # token使用情况
                 success=True,
-                scene_info=scene_info
+                scene_info=scene_info                   # 场景信息
             )
             
         except Exception as e:
             logger.error(f"❌ 查询服务失败: {e}")
             return RAGResponse(
                 content="",
-                source_documents=[],
+                source_documents=[],              # 源文档列表为空
                 success=False,
                 error_message=f"查询过程中发生错误：{str(e)}",
                 scene_info=None
@@ -430,17 +444,18 @@ class RAGService:
             logger.info(f"🔍 搜索相似文档: {query} (top_k={top_k})")
             
             # 使用向量存储进行相似性搜索
+            # 直接用Milvus底层的方法搜索，不仅返回文档，还会返回原始的相似度分数
             docs = self.vector_store.similarity_search_with_score(query, k=top_k)
             
             results = []
             for doc, score in docs:
                 result = {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata,
-                    "similarity_score": float(score),
-                    "doc_name": doc.metadata.get("doc_name", "未知文档"),
-                    "doc_path_name": doc.metadata.get("doc_path_name", ""),
-                    "doc_type": doc.metadata.get("doc_type", "unknown")
+                    "content": doc.page_content,    # 文档的正文内容
+                    "metadata": doc.metadata,       # 文档附带的元数据
+                    "similarity_score": float(score), # 文档的相似度分数        
+                    "doc_name": doc.metadata.get("doc_name", "未知文档"),       # 文档名称，默认是未知文档
+                    "doc_path_name": doc.metadata.get("doc_path_name", ""),    # 文档路径名称，默认为空
+                    "doc_type": doc.metadata.get("doc_type", "unknown")         # 文档类型，默认是unknown
                 }
                 results.append(result)
             
@@ -452,80 +467,81 @@ class RAGService:
             return []
     
     def health_check(self) -> Dict[str, Any]:
-        """健康检查
+        """健康检查（运维用）
         
         Returns:
             Dict: 健康状态信息
         """
+        # 体检表思密达
         status = {
             "service": "RAGService",
-            "status": "healthy",
-            "components": {},
-            "timestamp": None
+            "status": "healthy",    # 我的状态默认健康
+            "components": {},       # 我身上的零件状态
+            "timestamp": None       # 检查时间
         }
         
         try:
             from datetime import datetime
-            status["timestamp"] = datetime.now().isoformat()
+            status["timestamp"] = datetime.now().isoformat()    # 记录当前检查的标准时间
             
-            # 检查嵌入模型
+            # 检查嵌入模型，第一个零件思密达
             try:
-                test_embedding = self.embeddings.embed_query("健康检查")
+                test_embedding = self.embeddings.embed_query("健康检查")    # 随便编一个向量思密达
                 status["components"]["embeddings"] = {
                     "status": "healthy",
                     "model": Config.LLM_EMBEDDING_MODEL_NAME,
                     "dimension": len(test_embedding)
                 }
-            except Exception as e:
+            except Exception as e:  # 嵌入模型坏掉啦，记录错误信息思密达
                 status["components"]["embeddings"] = {
                     "status": "error",
                     "error": str(e)
                 }
-                status["status"] = "degraded"
+                status["status"] = "degraded"    # 我的状态变差了
             
-            # 检查大语言模型
+            # 检查大语言模型，第二个零件思密达
             try:
-                with get_openai_callback() as cb:
-                    test_response = self.llm.invoke("你好").content
+                with get_openai_callback() as cb:   # 开启token统计
+                    test_response = self.llm.invoke("你好").content     # LLM你还活着吗
                 status["components"]["llm"] = {
                     "status": "healthy",
                     "model": Config.LLM_MODEL_NAME,
-                    "response_length": len(test_response) if test_response else 0,
+                    "response_length": len(test_response) if test_response else 0,  # 回了几句话
                     "test_tokens": cb.total_tokens
                 }
-            except Exception as e:
+            except Exception as e:  # 大语言模型坏掉啦，记录错误信息思密达
                 status["components"]["llm"] = {
                     "status": "error",
                     "error": str(e)
                 }
-                status["status"] = "degraded"
+                status["status"] = "degraded"    # 我的状态又变差了
             
-            # 检查向量存储
+            # 检查向量存储，第三个零件思密达
             try:
-                test_docs = self.vector_store.similarity_search("测试", k=1)
+                test_docs = self.vector_store.similarity_search("测试", k=1)    # Milvus你还活着吗？
                 status["components"]["vector_store"] = {
                     "status": "healthy",
-                    "collection": Config.MILVUS_COLLECTION_NAME,
-                    "test_results": len(test_docs)
+                    "collection": Config.MILVUS_COLLECTION_NAME,    # 连接到了哪张表
+                    "test_results": len(test_docs)                  # 搜到了几个？
                 }
-            except Exception as e:
+            except Exception as e:  # 向量存储坏掉啦，记录错误信息思密达
                 status["components"]["vector_store"] = {
                     "status": "error",
                     "error": str(e)
                 }
-                status["status"] = "degraded"
+                status["status"] = "degraded"    # 我的状态双变差了
             
-            # 检查重排序服务
+            # 检查重排序服务，第四个零件思密达
             try:
                 if self.rerank_service:
-                    rerank_health = self.rerank_service.health_check()
+                    rerank_health = self.rerank_service.health_check()  # Rerank自己的健康检查方法
                     status["components"]["rerank_service"] = rerank_health
                 else:
                     status["components"]["rerank_service"] = {
                         "status": "not_configured",
                         "message": "重排序服务未配置"
                     }
-            except Exception as e:
+            except Exception as e:  # 重排序服务坏掉啦，记录错误信息思密达
                 status["components"]["rerank_service"] = {
                     "status": "error",
                     "error": str(e)
@@ -538,6 +554,7 @@ class RAGService:
         
         return status
 
+    # 场景检测方法，判断用户来干啥的（用来决定是不是要直接转人工）
     def detect_user_scene(self, query: str) -> Dict[str, Any]:
         """检测用户问题的场景类型
         
@@ -550,7 +567,7 @@ class RAGService:
         try:
             # 使用LLM进行场景检测
             prompt = self.SCENE_DETECTION_TEMPLATE.format(question=query)
-            response = self.llm.invoke(prompt).content.strip()
+            response = self.llm.invoke(prompt).content.strip() # 让大模型判断，并把返回的数字前后的空格去掉（防止它回复 " 1 "）
             
             # 解析场景类型
             scene_mapping = {
@@ -562,25 +579,26 @@ class RAGService:
                 "6": {"type": "其他咨询类", "priority": "normal", "suggest_human": False}
             }
             
-            scene_info = scene_mapping.get(response, scene_mapping["6"])
-            scene_info["detected_number"] = response
+            scene_info = scene_mapping.get(response, scene_mapping["6"])    # LLM瞎说就是“其他”的场景类型
+            scene_info["detected_number"] = response                        # LLM原始返回的数字，方便查bug
             
             logger.info(f"🎯 场景检测结果: {query} -> {scene_info['type']} (优先级: {scene_info['priority']})")
             
-            return scene_info
+            return scene_info   # 返回场景信息字典
             
         except Exception as e:
             logger.warning(f"场景检测失败: {e}")
             return {"type": "其他咨询类", "priority": "normal", "suggest_human": False, "detected_number": "6"}
 
 
-# 全局RAG服务实例
+# 全局唯一RAG服务实例
 _rag_service_instance = None
 
 def get_rag_service() -> Optional[RAGService]:
     """获取RAG服务实例（单例模式）"""
-    global _rag_service_instance
+    global _rag_service_instance    # 我要修改你咯
     
+     # 如果这个对象还没被创建过
     if _rag_service_instance is None:
         try:
             _rag_service_instance = RAGService()
@@ -611,12 +629,13 @@ def query_question(question: str) -> RAGResponse:
             error_message="RAG服务初始化失败"
         )
     
+    # 调用单例RAG服务对象的核心方法去查问题，并把结果返回
     return rag_service.query_service(question)
 
 
 if __name__ == "__main__":
     # 测试代码 - 专业客服RAG系统
-    rag = get_rag_service()
+    rag = get_rag_service() # 拿到服务实例
 
 
     # 检测健康状态
@@ -635,6 +654,7 @@ if __name__ == "__main__":
 
     print(100 * "=")
     
+    # 循环测试问题
     for i, question in enumerate(test_cases, 1):
         print(100 * "*")
         print(f"\n=== 测试案例 {i}: {question} ===")

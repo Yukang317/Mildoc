@@ -1,3 +1,11 @@
+# 阿里云 OSS 事件处理器 ，负责监听阿里云 OSS 对象存储的事件（如文件上传、删除），并触发相应的处理流程。
+#    解决了文档变更的实时感知和处理问题，确保知识库能够及时更新，反映最新的文档状态。
+# - 交互关系 ：
+#   - 与阿里云 OSS 交互：通过 MNS 消息队列接收事件通知
+#   - 与 MinIO 客户端交互：因为兼容阿里云 OSS，所以使用同一套 MinIO 客户端
+#   - 与 SimpleObjectParser 交互：解析上传的文档
+#   - 与 EmbeddingTool 交互：生成文档片段的向量表示
+#   - 与 MilvusAPI 交互：将解析后的文档存储到 Milvus 向量数据库
 import json
 from datetime import datetime
 import time
@@ -5,13 +13,13 @@ from enum import Enum
 from typing import Dict, Any, Optional, Callable
 import os
 from dotenv import load_dotenv
-from dataclasses import dataclass
+from dataclasses import dataclass   # 数据类装饰器
 
-from minio import Minio
-from mns.account import Account
+from minio import Minio                             # MinIO客户端，用于与对象存储交互
+from mns.account import Account                     # 阿里云消息队列账户
 from parser.simple_object_parser import SimpleObjectParser
 from embedding import EmbeddingTool
-from milvus_api import MilvusAPI, MilvusDocument
+from milvus_api import MilvusAPI, MilvusDocument    # Milvus操作接口
 from logger.logging import setup_logging
 
 load_dotenv()
@@ -20,12 +28,12 @@ logger = setup_logging()
 
 # Minio 配置，因为兼容阿里云 OSS，所以使用同一套MinIO客户端。
 MINIO_BUCKET = os.getenv('MINIO_BUCKET')
-MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT')
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT')        # 服务端点
 MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')
 MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')
 MINIO_REGION = os.getenv('MINIO_REGION')
-MINIO_USE_VIRTUAL_HOST = os.getenv('MINIO_USE_VIRTUAL_HOST', 'false').lower() == 'true'
-MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'false').lower() == 'true'
+MINIO_USE_VIRTUAL_HOST = os.getenv('MINIO_USE_VIRTUAL_HOST', 'false').lower() == 'true'  # 是否使用虚拟主机名
+MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'false').lower() == 'true'  # 是否使用 SSL 加密
 
 ## 获取MinIO客户端
 def _get_minio_client() -> Minio:
@@ -38,23 +46,23 @@ def _get_minio_client() -> Minio:
     )
 
     if MINIO_USE_VIRTUAL_HOST:
-        client.enable_virtual_style_endpoint()
+        client.enable_virtual_style_endpoint()  # 启用虚拟样式端点，修改客户端的请求路径生成方式，将桶名称嵌入到主机名中
         
     return client
 
 
 ## 配置阿里云消息队列
-MNS_ACCESS_KEY_ID = os.getenv("MNS_ACCESS_KEY_ID")
-MNS_ACCESS_KEY_SECRET = os.getenv("MNS_ACCESS_KEY_SECRET")
-MNS_ENDPOINT = os.getenv("MNS_ENDPOINT") 
-MNS_QUEUE_NAME = os.getenv("MNS_QUEUE_NAME", "mildoc-oss-notify")
+MNS_ACCESS_KEY_ID = os.getenv("MNS_ACCESS_KEY_ID")                  # 从环境变量获取MNS访问密钥ID
+MNS_ACCESS_KEY_SECRET = os.getenv("MNS_ACCESS_KEY_SECRET")          # 从环境变量获取MNS访问密钥
+MNS_ENDPOINT = os.getenv("MNS_ENDPOINT")                            # 从环境变量获取MNS服务端点
+MNS_QUEUE_NAME = os.getenv("MNS_QUEUE_NAME", "mildoc-oss-notify")   # 从环境变量获取MNS队列名称
 
 class OSSEventType(Enum):
     """OSS 事件类型"""
     OBJECT_CREATED = "ObjectCreated"  # 对象创建（上传）
     OBJECT_REMOVED = "ObjectRemoved"  # 对象删除
 
-@dataclass
+@dataclass      # 自动生成 __init__ 、 __repr__ 、 __eq__ 等方法
 class OSSEvent:
     """OSS 事件数据结构"""
     event_name: str  # 事件名称，如 "ObjectCreated:PutObject"
@@ -75,8 +83,8 @@ class OSSEventNotifier:
             raise Exception("MNS_ENDPOINT or MNS_ACCESS_KEY_ID or MNS_ACCESS_KEY_SECRET is not set")
         
             
-        mns_account = Account(MNS_ENDPOINT, MNS_ACCESS_KEY_ID, MNS_ACCESS_KEY_SECRET)
-        self.mildoc_queue = mns_account.get_queue(MNS_QUEUE_NAME)
+        mns_account = Account(MNS_ENDPOINT, MNS_ACCESS_KEY_ID, MNS_ACCESS_KEY_SECRET)   # 创建MNS账户
+        self.mildoc_queue = mns_account.get_queue(MNS_QUEUE_NAME)  # 获取MNS队列
         logger.info(f"✓ MNS 队列初始化成功 (endpoint: {MNS_ENDPOINT})")
         
     def listen_mns_queue(
@@ -85,7 +93,7 @@ class OSSEventNotifier:
         poll_interval: int = 5
     ):
         """
-        监听 MNS 队列，接收 OSS 事件通知。
+        监听 MNS 队列，接收 OSS 事件通知，调用处理函数处理事件。主要在增量更新中使用。
         
         :param handler: 事件处理函数，接收 Dict 对象
         :param poll_interval: 轮询间隔（秒）
@@ -103,14 +111,14 @@ class OSSEventNotifier:
                 try:
                     # 接收消息（长轮询，等待最多 10 秒）
                     try:
-                        msg = self.mildoc_queue.receive_message_with_str_body(wait_seconds=10)
+                        msg = self.mildoc_queue.receive_message_with_str_body(wait_seconds=10)  # 接收消息
 
-                        # 获取到消息内容后，清理MQ中的消息，避免重复处理
+                        # OSSEventNotifier实例获取到消息内容后，清理MQ中的消息，避免重复处理（同一条消息被多次接受） - MQ和接收者即生产者-消费者模型
                         self.mildoc_queue.delete_message(msg.receipt_handle)
                         logger.info(f"消息已获取并从MQ中清除，避免重复处理: {msg.receipt_handle}")
 
                     except Exception as e:
-                        # 如果没有消息，会抛出异常，继续轮询
+                        # 如果MNS队列中没有消息，会抛出异常，**等待指定时间后继续轮询**
                         if "MessageNotExist" in str(e) or "not found" in str(e).lower():
                             time.sleep(poll_interval)
                             continue
@@ -119,11 +127,11 @@ class OSSEventNotifier:
                             time.sleep(poll_interval)
                             continue
                     
-                    if msg:
+                    if msg: # 如果获取到消息
                         try:
                             # 解析 OSS 事件
                             # MNS 消息体可能是字符串，需要先解析
-                            message_body = msg.message_body
+                            message_body = msg.message_body # 获取消息体
                             if isinstance(message_body, str):
                                 event_data = json.loads(message_body)
                             else:
@@ -132,13 +140,13 @@ class OSSEventNotifier:
                             #logger.info(f"event_data: {event_data}")
                             logger.info(f"数据: {json.dumps(event_data, ensure_ascii=False, indent=2)}")
                             
-                            if event_data:
+                            if event_data:  # 如果事件数据存在，即解析成功
                                 
                                 # 调用处理函数
-                                if handler:
+                                if handler:     # 这里的 handler 就是 self._process_event
                                     handler(event_data)
                                 
-                                logger.info("  ✓ 消息已处理")
+                                logger.info("  ✓ 消息已处理")  # 完整执行了_process_event(event_data)
                             else:
                                 logger.warning(f"⚠ 无法解析事件数据: {message_body}")
                                 
@@ -168,7 +176,7 @@ class OSSEventHandler:
     
     def __init__(self, bucket_name: str = None):
         """
-        初始化监听器
+        初始化监听器，MinIO客户端、文档解析器、Milvus API、Embedding工具、OSS事件通知管理器实例
         
         Args:
             bucket_name (str): 要监听的桶名称，默认从环境变量获取
@@ -198,7 +206,7 @@ class OSSEventHandler:
 
     def _process_event(self, event_data: Dict[str, Any]):
         """
-        处理单个事件
+        处理单个事件。根据事件类型调用相应的处理方法，并在处理完成后刷新 Milvus 集合
         
         Args:
             event_data (Dict[str, Any]): 事件数据
@@ -239,11 +247,11 @@ class OSSEventHandler:
             if not events:
                 return None
             
-            event = events[0]
+            event = events[0]   # 获取第一个事件
             event_name = event.get("eventName", "")
             event_time = event.get("eventTime", "")
             
-            # 获取对象信息
+            # 获取对象信息和桶信息
             oss_obj = event.get("oss", {}).get("object", {})
             bucket = event.get("oss", {}).get("bucket", {})
             
@@ -252,7 +260,7 @@ class OSSEventHandler:
                 event_time=event_time,
                 bucket_name=bucket.get("name", ""),
                 object_key=oss_obj.get("key", ""),
-                object_size=oss_obj.get("size"),
+                object_size=oss_obj.get("size"),    # 对象大小
                 etag=oss_obj.get("etag"),
             )
         except Exception as e:
@@ -308,7 +316,7 @@ class OSSEventHandler:
     
     def _process_single_object(self, bucket_name: str, object_name: str, force_update: bool = False):
         """
-        处理单个对象（用于全量刷新和排查补漏）
+        处理单个对象（用于全量刷新和排查补漏），文档解析、向量生成、存储，连接 OSS 和 Milvus 
         
         Args:
             bucket_name (str): 桶名称
@@ -330,7 +338,7 @@ class OSSEventHandler:
             logger.info(f"  处理文档: {object_name}")
             
             # 解析对象内容
-            parse_result = self.parser.parse_object(bucket_name, object_name)
+            parse_result: Dict[str, Any] = self.parser.parse_object(bucket_name, object_name)
             
             if 'error' in parse_result:
                 logger.error(f"    解析失败: {parse_result['error']}")
@@ -396,8 +404,8 @@ class OSSEventHandler:
             # 获取桶中的所有对象
             objects = self.minio_client.list_objects(self.bucket_name, recursive=True)
             
-            total_objects = 0
-            processed_objects = 0
+            total_objects = 0   # 总对象数
+            processed_objects = 0   # 已处理对象数
             
             for obj in objects:
                 object_name = obj.object_name
@@ -434,9 +442,9 @@ class OSSEventHandler:
             # 获取桶中的所有对象
             objects = self.minio_client.list_objects(self.bucket_name, recursive=True)
             
-            total_objects = 0
-            new_objects = 0
-            existing_objects = 0
+            total_objects = 0   # 总对象数
+            new_objects = 0   # 新增对象数
+            existing_objects = 0   # 已存在对象数
             
             for obj in objects:
                 object_name = obj.object_name
@@ -469,6 +477,7 @@ class OSSEventHandler:
         except Exception as e:
             logger.error(f"排查补漏失败: {e}")
     
+    # 只处理发生变化的对象，不处理未变化的对象
     def start_listening(self):
         """
         模式3：增量更新 - 根据消息通知进行增量更新

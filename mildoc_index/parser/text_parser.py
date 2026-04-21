@@ -29,6 +29,7 @@ class TextParser(DocumentParser):
     
     def supports(self, content_type: str) -> bool:
         """检查是否支持文本"""
+        # 纯文本、HTML 和 Markdown
         return content_type.lower() in ['text/plain', 'text/html', 'text/markdown', 'txt']
 
 

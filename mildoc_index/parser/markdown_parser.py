@@ -12,16 +12,16 @@ class MarkdownParser(DocumentParser):
     def parse(self, data: bytes) -> str:
         """解析Markdown文档，直接返回原始内容"""
         try:
-            # 尝试不同的编码
+            # 尝试不同的编码 - 按优先级排序
             encodings = ['utf-8', 'gbk', 'gb2312', 'latin-1']
             for encoding in encodings:
                 try:
-                    return data.decode(encoding)
+                    return data.decode(encoding)    # 将二进制数据使用指定的编码解码为字符串
                 except UnicodeDecodeError:
                     continue
             
             # 如果所有编码都失败，使用错误处理
-            return data.decode('utf-8', errors='ignore')
+            return data.decode('utf-8', errors='ignore')    # 忽略无法解码的部分
             
         except Exception as e:
             logger.error(f"Markdown解析失败: {e}")

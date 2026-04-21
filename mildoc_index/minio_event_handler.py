@@ -1,4 +1,10 @@
-# Minio对象存储事件处理器
+# Minio对象存储事件处理器负责监听 MinIO 对象存储的事件（如文件上传、删除），并触发相应的处理流程。
+#   - 解决了文档变更的实时感知和处理问题，确保知识库能够及时更新，反映最新的文档状态。
+# 交互关系 ：
+#   - 与 MinIO 交互：监听对象存储事件
+#   - 与 SimpleObjectParser 交互：解析上传的文档
+#   - 与 EmbeddingTool 交互：生成文档片段的向量表示
+#   - 与 MilvusAPI 交互：将解析后的文档存储到 Milvus 向量数据库
 import json
 from datetime import datetime
 from typing import Dict, Any
@@ -17,15 +23,15 @@ logger = setup_logging()
 
 
 # Minio 配置信息。
-MINIO_BUCKET = os.getenv('MINIO_BUCKET')
-MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT')
-MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')
-MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')
-MINIO_REGION = os.getenv('MINIO_REGION')
-MINIO_USE_VIRTUAL_HOST = os.getenv('MINIO_USE_VIRTUAL_HOST', 'false').lower() == 'true'
-MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'false').lower() == 'true'
+MINIO_BUCKET = os.getenv('MINIO_BUCKET')            # 桶名称
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT')        # 服务端点
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')    # 访问密钥
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')    # 密钥
+MINIO_REGION = os.getenv('MINIO_REGION')            # 区域
+MINIO_USE_VIRTUAL_HOST = os.getenv('MINIO_USE_VIRTUAL_HOST', 'false').lower() == 'true'   # 是否使用虚拟主机样式的端点
+MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'false').lower() == 'true'                     # 是否使用SSL
 
-## 获取MinIO客户端
+# 创建并返回MinIO客户端实例
 def _get_minio_client() -> Minio:
     client = Minio(
         endpoint=MINIO_ENDPOINT,
@@ -35,11 +41,13 @@ def _get_minio_client() -> Minio:
         region=MINIO_REGION,
     )
 
-    if MINIO_USE_VIRTUAL_HOST:
-        client.enable_virtual_style_endpoint()
+    # 如果使用虚拟主机
+    if MINIO_USE_VIRTUAL_HOST:  
+        client.enable_virtual_style_endpoint()  # 启用虚拟主机样式的端点
         
     return client
 
+# Minio事件处理器类
 class MinioEventHandler:
     """Minio事件监听器"""
     
@@ -69,6 +77,7 @@ class MinioEventHandler:
 
         logger.info("所有组件初始化完成！")
     
+    # 接收事件数据
     def _extract_event_info(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         从事件数据中提取关键信息
@@ -82,19 +91,19 @@ class MinioEventHandler:
         try:
 
             #logger.info(f"event_data: {event_data}")
-            logger.info(f"数据: {json.dumps(event_data, ensure_ascii=False, indent=2)}")
+            logger.info(f"数据: {json.dumps(event_data, ensure_ascii=False, indent=2)}")    # 原始数据，非ASCII字符可显示，输出缩进2个空格
 
-            record = event_data.get('Records', [{}])[0]
-            s3_info = record.get('s3', {})  # 节点中拿到以下内容
+            record = event_data.get('Records', [{}])[0]     # 获取第一个记录
+            s3_info = record.get('s3', {})  # s3中包含了对象存储相关的信息，节点中拿到以下内容
             
             return {
-                'event_name': record.get('eventName', ''),
-                'event_time': record.get('eventTime', ''),
-                'bucket_name': s3_info.get('bucket', {}).get('name', ''),
-                'object_name': s3_info.get('object', {}).get('key', ''),
-                'object_size': s3_info.get('object', {}).get('size', 0),
-                'content_type': s3_info.get('object', {}).get('contentType', ''),
-                'etag': s3_info.get('object', {}).get('eTag', ''),
+                'event_name': record.get('eventName', ''),  # 事件名称
+                'event_time': record.get('eventTime', ''),  # 事件时间
+                'bucket_name': s3_info.get('bucket', {}).get('name', ''),  # 桶名称
+                'object_name': s3_info.get('object', {}).get('key', ''),  # 对象名称
+                'object_size': s3_info.get('object', {}).get('size', 0),  # 对象大小
+                'content_type': s3_info.get('object', {}).get('contentType', ''),   # 对象内容类型
+                'etag': s3_info.get('object', {}).get('eTag', ''),  # 对象ETAG
             }
         except Exception as e:
             logger.error(f"提取事件信息失败: {e}")
@@ -115,7 +124,7 @@ class MinioEventHandler:
             logger.info(f"对象大小: {event_info['object_size']} 字节")
             logger.info(f"内容类型: {event_info['content_type']}")
             
-            # 直接调用_process_single_object方法处理
+            # 直接调用_process_single_object方法（处理单个对象）处理，强制更新
             self._process_single_object(bucket_name, object_name, force_update=True)
             
         except Exception as e:
@@ -131,14 +140,14 @@ class MinioEventHandler:
         try:
             bucket_name = event_info['bucket_name']
             object_name = event_info['object_name']
-            doc_path_name = object_name  # 不再包含bucket_name前缀
+            doc_path_name = object_name  # 不再包含bucket_name前缀，使用相对路径
             
             logger.info(f"\n=== 处理删除对象: {bucket_name}/{object_name} ===")
             
             # 从Milvus中删除相关记录
             logger.info("从Milvus中查找并删除相关记录...")
             
-            # 使用MilvusAPI的删除方法
+            # 使用MilvusAPI的删除方法，当 MinIO 中删除对象时，需要同步从 Milvus 向量数据库中删除对应的文档记录
             if self.milvus_api.delete_existing_document(doc_path_name):
                 logger.info(f"成功删除文档记录: {doc_path_name}")
             else:
@@ -149,20 +158,20 @@ class MinioEventHandler:
     
     def _process_event(self, event_data: Dict[str, Any]):
         """
-        处理单个事件
+        处理单个事件，根据事件类型调用相应的处理方法
         
         Args:
             event_data (Dict[str, Any]): 事件数据
         """
         try:
-            # 提取事件信息
+            # 提取事件信息（本文件中的方法）
             event_info = self._extract_event_info(event_data)
             if not event_info:
                 logger.error("无法提取事件信息，跳过处理")
                 return
             
             event_name = event_info['event_name']
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")    # 获取当前时间
             
             logger.info(f"\n[{timestamp}] 收到事件: {event_name}")
             logger.info(f"对象: {event_info['bucket_name']}/{event_info['object_name']}")
@@ -180,7 +189,7 @@ class MinioEventHandler:
     
     def _process_single_object(self, bucket_name: str, object_name: str, force_update: bool = False):
         """
-        处理单个对象（用于全量刷新和排查补漏）
+        处理单个对象（用于全量刷新和排查补漏），文档解析、向量生成和存储，连接 MinIO 和 Milvus
         
         Args:
             bucket_name (str): 桶名称
@@ -194,7 +203,7 @@ class MinioEventHandler:
             doc_path_name = object_name  # 不再包含bucket_name前缀
             
             # 如果是排查补漏模式，先检查是否已存在
-            if not force_update:
+            if not force_update:    # 不是强制更新
                 if self.milvus_api.check_document_exists(doc_path_name):
                     logger.info(f"  文档已存在，跳过: {object_name}")
                     return True
@@ -219,7 +228,7 @@ class MinioEventHandler:
                 self.milvus_api.delete_existing_document(doc_path_name)
             
             # 为每个文本片段生成embedding并存储到Milvus
-            success_count = 0
+            success_count = 0   # 成功数目
             for i, content in enumerate(parse_result['contents']):
                 try:
                     # 生成embedding向量
@@ -229,18 +238,21 @@ class MinioEventHandler:
                         continue
                     
                     # 准备文档数据
-                    doc_data = MilvusDocument(
-                        doc_name=parse_result['doc_name'],
-                        doc_path_name=parse_result['doc_path_name'],
-                        doc_type=parse_result['doc_type'],
+                    doc_data = MilvusDocument(  # 创建文档数据
+                        doc_name=parse_result['doc_name'],  # 文档名称
+                        doc_path_name=parse_result['doc_path_name'],  # 文档路径名称
+                        doc_type=parse_result['doc_type'],  # 文档类型
                         doc_md5=parse_result['doc_md5'],
                         doc_length=parse_result['doc_length'],
-                        content=content,
-                        content_vector=embedding_vector,
-                        embedding_model=self.embedding_tool.model
+                        content=content,  # 文本内容
+                        content_vector=embedding_vector,    # 文本内容向量
+                        embedding_model=self.embedding_tool.model   # 嵌入模型
                     )
                     
                     # 存储到Milvus（允许重复，因为我们已经处理了去重逻辑）
+                    #   在 _process_single_object 方法中，有以下去重逻辑：
+                    #        1. 排查补漏模式下：先检查文档是否存在，存在则跳过
+                    #        2. 强制更新模式下：先删除已存在的记录，再重新插入   
                     if self.milvus_api.insert_document(doc_data):
                         success_count += 1
                     else:
@@ -265,13 +277,13 @@ class MinioEventHandler:
         logger.info(f"正在遍历桶 '{self.bucket_name}' 中的所有对象...")
         
         try:
-            # 获取桶中的所有对象
+            # 获取桶中的所有对象（递归列出）
             objects = self.minio_client.list_objects(self.bucket_name, recursive=True)
             
-            total_objects = 0
-            processed_objects = 0
+            total_objects = 0   # 总对象数
+            processed_objects = 0   # 已处理对象数
             
-            for obj in objects:
+            for obj in objects:     # 遍历对象并获取名称
                 object_name = obj.object_name
                 
                 # 跳过文件夹
@@ -284,8 +296,9 @@ class MinioEventHandler:
                 
                 if self._process_single_object(self.bucket_name, object_name, force_update=True):
                     processed_objects += 1
-                    
-            self.milvus_api.flush_collection()
+            
+            # 刷新Milvus集合，保持Milvus中的数据于MinIO一致。将内存中的数据持久化到磁盘
+            self.milvus_api.flush_collection()  
             
             logger.info(f"\n=== 全量刷新完成 ===")
             logger.info(f"总对象数: {total_objects}")
@@ -343,7 +356,7 @@ class MinioEventHandler:
     
     def start_listening(self):
         """
-        模式3：增量更新 - 根据消息通知进行增量更新
+        模式3：增量更新，监听桶事件并实时处理，确保 Milvus 中的数据能够及时反映 MinIO 中的变化。
         """
         logger.info(f"\n=== 模式3：增量更新 ===")
         logger.info(f"开始监听桶 '{self.bucket_name}' 的事件...")
@@ -353,7 +366,7 @@ class MinioEventHandler:
             # 监听桶事件
             events = self.minio_client.listen_bucket_notification(
                 bucket_name=self.bucket_name,
-                events=['s3:ObjectCreated:*', 's3:ObjectRemoved:*']
+                events=['s3:ObjectCreated:*', 's3:ObjectRemoved:*'] # 监听的事件类型，包括对象创建和删除
             )
             
             for event in events:

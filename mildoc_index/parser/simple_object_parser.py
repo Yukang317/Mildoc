@@ -1,13 +1,15 @@
-from minio import Minio
+# 通用文档解析器 ，负责从 MinIO 对象存储中获取文档，并根据文档类型选择合适的解析器进行**解析和分块**，为后续文本向量化和向量存储做准备。
+from minio import Minio  # MinIO 客户端，用于从对象存储获取文档
 from dotenv import load_dotenv
 import os, sys
-import hashlib
-import argparse
+import hashlib  # 计算 MD5 哈希值，用于文档去重
+import argparse   # 命令行参数解析
 from typing import List, Dict, Any, Optional
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter  # langchain文本分割工具
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# /parser/目录下的其他文件
 from parser.document_parser import DocumentParser
 from parser.office_parser import OfficeParser
 from parser.pdf_parser import PDFParser
@@ -19,9 +21,11 @@ from logger.logging import setup_logging
 load_dotenv()
 logger = setup_logging()
 
+# 通用文档解析器，协调各种解析器
 class SimpleObjectParser:
     """简单对象解析器"""
     
+    # 注册各种文档解析器：接收minio客户端
     def __init__(self,minio_client: Minio, chunk_size: int = 2048, overlap_size: int = 128):
         """
         初始化解析器
@@ -64,8 +68,9 @@ class SimpleObjectParser:
         Returns:
             Optional[DocumentParser]: 解析器实例，如果没有找到则返回None
         """
+        # 遍历所有已注册的解析器
         for parser in self.parsers:
-            if parser.supports(content_type):
+            if parser.supports(content_type):   # 检查类型是否支持
                 return parser
         return None
     
@@ -79,7 +84,7 @@ class SimpleObjectParser:
         Returns:
             str: 文档名称
         """
-        return os.path.basename(object_path)
+        return os.path.basename(object_path)    # basename()提取路径的文件名部分
     
     def _extract_doc_type(self, content_type: str) -> str:
         """
@@ -94,7 +99,7 @@ class SimpleObjectParser:
         if not content_type:
             return "unknown"
         
-        # 提取主要类型
+        # 提取主要类型和子类型 - 按斜杠分割并转换为小写
         main_type = content_type.split('/')[0].lower()
         sub_type = content_type.split('/')[-1].lower()
         
@@ -120,6 +125,7 @@ class SimpleObjectParser:
             'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
         }
         
+        # 从映射字典中获取文档类型，如果未找到则返回子类型
         return type_mapping.get(content_type.lower(), sub_type)
     
     def _calculate_md5(self, data: bytes) -> str:
@@ -132,6 +138,7 @@ class SimpleObjectParser:
         Returns:
             str: MD5值
         """
+        # 使用 hashlib.md5 计算哈希值，并转换为十六进制字符串
         return hashlib.md5(data).hexdigest()
     
     def _split_text_by_langchain(self, text: str) -> List[str]:
@@ -139,10 +146,14 @@ class SimpleObjectParser:
         使用LangChain分割文本
         """
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.overlap_size)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.chunk_size, 
+            chunk_overlap=self.overlap_size
+        )
         return text_splitter.split_text(text)
     
-    def parse_object(self, bucket_name: str, object_name: str) -> Dict[str, Any]:
+    # 这段代码是核心的解析方法，实现了从 MinIO 获取对象、选择合适的解析器、解析文档内容、分割文本片段的完整流程，并处理了各种异常情况。
+    def parse_object(self, bucket_name: str, object_path: str) -> Dict[str, Any]:
         """
         解析简单对象
         
@@ -155,11 +166,11 @@ class SimpleObjectParser:
         """
         try:
             # 先获取对象信息，检查文件大小
-            logger.info(f"正在检查对象信息: {bucket_name}/{object_name}")
+            logger.info(f"正在检查对象信息: {bucket_name}/{object_path}")
             try:
-                stat = self.minio_client.stat_object(bucket_name, object_name)
-                file_size = stat.size
-                max_size = 512 * 1024 * 1024  # 512MB
+                stat = self.minio_client.stat_object(bucket_name, object_path)  # 获取对象状态信息
+                file_size = stat.size  # 获取文件大小
+                max_size = 512 * 1024 * 1024  # 最大512MB
                 
                 logger.info(f"对象大小: {file_size} 字节 ({file_size / 1024 / 1024:.2f} MB)")
                 
@@ -171,8 +182,8 @@ class SimpleObjectParser:
                 # 如果无法获取文件信息，继续尝试解析
             
             # 从Minio获取对象
-            logger.info(f"正在获取对象内容: {bucket_name}/{object_name}")
-            response = self.minio_client.get_object(bucket_name, object_name)
+            logger.info(f"正在获取对象内容: {bucket_name}/{object_path}")
+            response = self.minio_client.get_object(bucket_name, object_path)
             
             # 获取对象数据和元数据
             data = response.data
@@ -182,24 +193,24 @@ class SimpleObjectParser:
             logger.info(f"Content-Type: {headers.get('Content-Type', 'unknown')}")
             
             # 提取基本信息
-            doc_name = self._extract_doc_name(object_name)
-            doc_path_name = object_name  # 不再包含bucket_name前缀
-            content_type = headers.get('Content-Type', '')
-            doc_type = self._extract_doc_type(content_type)
-            doc_md5 = headers.get('ETag', '').strip('"')
+            doc_name = self._extract_doc_name(object_path)  # 文档名称
+            doc_path_name = object_path  # 不再包含bucket_name前缀
+            content_type = headers.get('Content-Type', '')  # 内容类型
+            doc_type = self._extract_doc_type(content_type)  # 文档类型
+            doc_md5 = headers.get('ETag', '').strip('"')     # ETag值 - Entity Tag 是HTTP响应头的一部分，用于标识资源的特定版本。MinIO中默认是MD5哈希值
             if len(doc_md5) != 32:  # 如果ETag不是32位，则重新计算MD5, 多部分上传：ETag = {复合MD5}-{部分数量}（超过32字符）
                 doc_md5 = self._calculate_md5(data)
             #doc_md5 = self._calculate_md5(data)
             doc_length = int(headers.get('Content-Length', len(data)))
             
-            # 选择合适的解析器
+            # 根据内容类型选择合适的解析器
             parser = self._get_parser(content_type)
             if not parser:
                 logger.info(f"警告: 未找到适合 {content_type} 的解析器，尝试使用文本解析器")
                 parser = TextParser()
             
             # 解析文档内容
-            logger.info(f"使用解析器: {parser.__class__.__name__}")
+            logger.info(f"使用解析器: {parser.__class__.__name__}")  # 对象实例.获取对象的类.获取类的名称字符串
             text_content = parser.parse(data)
             
             if not text_content:
@@ -242,6 +253,8 @@ class SimpleObjectParser:
 
 # 使用示例和测试
 if __name__ == "__main__":
+    # argparse 是 Python 标准库，用于解析命令行参数；ArgumentParser 类创建一个命令行参数解析器
+    # 使脚本可以通过命令行参数控制行为，例如指定要解析的文件路径、是否运行测试案例等
     parser = argparse.ArgumentParser(description='简单对象解析器 - 支持多种文档格式解析')
     
     # 基本参数
@@ -256,6 +269,7 @@ if __name__ == "__main__":
     # 输出选项
     parser.add_argument('--verbose', action='store_true', help='显示详细信息')
     
+    # 解析命令行参数 - 将参数值存储到 args 对象中，例如：如果运行 python script.py --test ，则 args.test 会是 True
     args = parser.parse_args()
     
     print("=== 简单对象解析器 ===")
@@ -271,7 +285,7 @@ if __name__ == "__main__":
     
     results = []
     
-    if args.test:
+    if args.test:  # 检查是否运行测试
         # 运行默认测试案例
         print("\n运行默认测试案例...")
         test_files = [
@@ -282,7 +296,7 @@ if __name__ == "__main__":
         
         for bucket_name, object_path in test_files:
             print(f"\n=== 解析文档: {bucket_name}/{object_path} ===")
-            result = object_parser.parse_object(bucket_name, object_path)
+            result = object_parser.parse_object(bucket_name, object_path)   # 核心方法解析文档
             results.append(result)
             
             # 显示解析结果
@@ -303,7 +317,7 @@ if __name__ == "__main__":
             
             print("-" * 100)
     
-    elif args.file:
+    elif args.file:  # 检查是否指定文件路径
         # 解析指定的文件
         for file_path in args.file:
             print(f"\n=== 解析文档: {args.bucket}/{file_path} ===")

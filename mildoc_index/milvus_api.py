@@ -1,10 +1,10 @@
 from enum import Enum
-from pymilvus import MilvusClient, DataType
+from pymilvus import MilvusClient, DataType     # Milvus Python SDK，提供与Milvus数据库交互的API
 import os
 from dotenv import load_dotenv
 from logger.logging import setup_logging
 from pprint import pprint
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict   # 提供数据类装饰器，简化数据结构定义
 
 load_dotenv()
 
@@ -12,17 +12,18 @@ logger = setup_logging()
 
 
 @dataclass
-class MilvusDocument:   # 对象
+class MilvusDocument:   # 数据类，定义文档的数据结构
     doc_name: str # 文档名称
     doc_path_name: str # 文档路径（含名字）
     doc_type: str # 文档类型
     doc_md5: str # 文档MD5哈希值
     doc_length: int # 文档字节数
     content: str # 文档分段内容
-    content_vector: list # 分段内容向量
-    embedding_model: str # embedding模型名称
+    content_vector: list # 分段内容向量！
+    embedding_model: str # embedding模型名称，需要与milvus配置统一
 
-class MilvusDocumentField(str, Enum):   # 字段，枚举类
+# 定义Milvus集合中的所有字段名，避免硬编码
+class MilvusDocumentField(str, Enum):   # 字段，字符串或枚举类
     ID = "id" # 主键ID
     DOC_NAME = "doc_name" # 文档名称
     DOC_PATH_NAME = "doc_path_name" # 文档路径（含名字）
@@ -33,27 +34,27 @@ class MilvusDocumentField(str, Enum):   # 字段，枚举类
     CONTENT_VECTOR = "content_vector" # 分段内容向量
     EMBEDDING_MODEL = "embedding_model" # embedding模型名称
 
-class MilvusAPI:
+class MilvusAPI:   # 主类，客户端，提供与Milvus数据库交互的所有方法
     def __init__(self):
         """初始化Milvus客户端连接"""
-        self.database_name = os.getenv("MILVUS_DATABASE")
-        self.collection_name = os.getenv("MILVUS_COLLECTION") 
-        self.index_name = os.getenv("MILVUS_INDEX_NAME")
-        self.vector_dim = int(os.getenv("MILVUS_VECTOR_DIM")) 
+        self.database_name = os.getenv("MILVUS_DATABASE")       # Milvus数据库名称
+        self.collection_name = os.getenv("MILVUS_COLLECTION")   # Milvus集合名称
+        self.index_name = os.getenv("MILVUS_INDEX_NAME")        # Milvus索引名称
+        self.vector_dim = int(os.getenv("MILVUS_VECTOR_DIM"))   # 向量维度
         
         if not self.database_name or not self.collection_name or not self.index_name or not self.vector_dim:
             logger.error("Milvus配置错误")
             raise ValueError("Milvus配置错误")
 
-        # 创建客户端连接，指定数据库
+        # 创建客户端实例，指定数据库
         self.client = MilvusClient(
             uri=f"http://{os.getenv('MILVUS_HOST')}:{os.getenv('MILVUS_PORT')}",
             user=os.getenv('MILVUS_USER'),
             password=os.getenv('MILVUS_PASSWORD'),
-            db_name=self.database_name
+            db_name=self.database_name  # 指定数据库名称
         )
         
-        init_result =   self._initialize()
+        init_result =   self._initialize()  # 初始化Milvus数据库、集合和索引
         if not init_result:
             logger.error("Milvus初始化失败")
             raise ValueError("Milvus初始化失败")
@@ -66,7 +67,7 @@ class MilvusAPI:
                 logger.info(f"集合 '{self.collection_name}' 已存在")
                 return True
             
-            # 定义schema - 表结构
+            # 定义schema - 表结构定义，定义了集合（Collection）中包含哪些字段，及每个字段的类型和属性
             schema = self.client.create_schema(
                 auto_id=True,  # 自动生成ID
                 enable_dynamic_field=False  # 禁用动态字段，类似于MySQL中增加了JSON的字段
@@ -149,8 +150,8 @@ class MilvusAPI:
             logger.error(f"创建集合失败: {e}")
             return False
     
-    def _create_index_if_not_exists(self) -> bool:  # 关键
-        """创建索引"""
+    def _create_index_if_not_exists(self) -> bool:  # 关键索引，用于快速查询
+        """创建索引（如果不存在则创建）"""
         try:
             # 检查索引是否已存在
             indexes = self.client.list_indexes(collection_name=self.collection_name)
@@ -158,9 +159,9 @@ class MilvusAPI:
                 logger.info(f"索引 '{self.index_name}' 已存在")
                 return True
             
-            # 创建向量索引
-            index_params = self.client.prepare_index_params()
-            index_params.add_index(
+            # 创建向量索引 - 用于 配置向量索引 的参数集合。它定义了如何为向量字段创建索引，以加速相似性搜索。
+            index_params = self.client.prepare_index_params()   # 创建索引参数对象
+            index_params.add_index(     
                 field_name=MilvusDocumentField.CONTENT_VECTOR.value,
                 index_type="IVF_FLAT",  # 索引类型 - 聚类索引，nlist聚类数量和nprobe查询时扫描的聚类
                 metric_type="COSINE",  # 余弦相似度
@@ -222,9 +223,11 @@ class MilvusAPI:
             # 先确保集合已加载
             self._load_collection()
             
-            # 根据路径查询
+            # 根据路径查询 - 构建查询表达式
             filter_expr = f'doc_path_name == "{doc_path_name}"'
             
+            # 执行查询 - 只查询ID字段，限制结果为1条记录
+            logger.info(f"查询文档是否存在 - {filter_expr}")
             results = self.client.query(
                 collection_name=self.collection_name,
                 filter=filter_expr,
@@ -257,7 +260,8 @@ class MilvusAPI:
             # 构建删除表达式
             delete_expr = f'doc_path_name == "{doc_path_name}"'
             
-            # 执行删除操作
+            # 执行删除操作 - 根据路径删除
+            logger.info(f"删除已存在的文档记录 - {delete_expr}")
             result = self.client.delete(
                 collection_name=self.collection_name,
                 filter=delete_expr
@@ -305,17 +309,18 @@ class MilvusAPI:
             list: 搜索结果
         """
         try:
-            search_params = {
+            search_params = {   # 搜索参数 - 余弦相似度搜索，nprobe=64表示每个查询向量与64个文档向量进行相似度计算
                 "metric_type": "COSINE",
                 "params": {"nprobe": 64}
             }
             
             results = self.client.search(
                 collection_name=self.collection_name,
-                data=[query_vector],
-                anns_field=MilvusDocumentField.CONTENT_VECTOR.value,
-                search_params=search_params,
-                limit=limit,
+                data=[query_vector],    # 搜索向量
+                anns_field=MilvusDocumentField.CONTENT_VECTOR.value,    # 指定要搜索的字段名
+                search_params=search_params,    # 搜索参数，包含相似度度量和搜索策略
+                limit=limit,    # 返回结果数
+                # 返回字段：文档名称、路径、类型、内容、使用的embedding模型和默认的相似度分数
                 output_fields=[MilvusDocumentField.DOC_NAME.value, MilvusDocumentField.DOC_PATH_NAME.value, MilvusDocumentField.DOC_TYPE.value, MilvusDocumentField.CONTENT.value, MilvusDocumentField.EMBEDDING_MODEL.value]
             )
             

@@ -13,14 +13,16 @@ class EmbeddingTool:
         """
         初始化embedding工具
         """
+        # 初始化OpenAI客户端
         self.client = OpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL")
         )
-        self.model = os.getenv("ENBEDDING_MODEL")
-        self.dimensions = int(os.getenv("MILVUS_VECTOR_DIM"))
-        self.encoding_format = "float"
+        self.model = os.getenv("ENBEDDING_MODEL")   # 嵌入模型名称
+        self.dimensions = int(os.getenv("MILVUS_VECTOR_DIM"))   # 向量维度
+        self.encoding_format = "float"  # 向量编码格式
 
+        # 检查必要参数是否都已经设置好
         if not self.client or not self.model or not self.dimensions or not self.encoding_format:
             logger.error("Embedding工具初始化失败")
             raise ValueError("Embedding工具初始化失败")
@@ -44,16 +46,16 @@ class EmbeddingTool:
             )
             
             if not response.data:
-                logger.error("获取embedding失败")
+                logger.error("获取embedding失败，API响应为空，可能是因为模型不存在或配置错误")
                 return []
             
             embedding = response.data[0].embedding
             if not embedding:
-                logger.error("获取embedding失败")
+                logger.error("获取embedding失败，第一个结果的嵌入向量为空")
                 return []
             
             if len(embedding) != self.dimensions:
-                logger.error("获取embedding失败")
+                logger.error(f"获取embedding失败，维度错误，期望{self.dimensions}，实际{len(embedding)}")
                 return []
             
             return embedding
@@ -81,18 +83,18 @@ class EmbeddingTool:
             )
             
             if not response.data:
-                logger.error("批量获取embedding失败")
+                logger.error("批量获取embedding失败，API响应为空，可能是因为模型不存在或配置错误")
                 return []
             
             embeddings = [data.embedding for data in response.data] 
             
             if len(embeddings) != len(texts):
-                logger.error("批量获取embedding失败")
+                logger.error(f"批量获取embedding失败，返回结果数量与输入文本数量不匹配，期望{len(texts)}，实际{len(embeddings)}")
                 return []
 
             for embedding in embeddings:
                 if len(embedding) != self.dimensions:
-                    logger.error("批量获取embedding失败")
+                    logger.error(f"批量获取embedding失败，维度错误，期望{self.dimensions}，实际{len(embedding)}")
                     return []
             
             return embeddings
@@ -112,7 +114,7 @@ class EmbeddingTool:
             "model": self.model,
             "dimensions": self.dimensions,
             "encoding_format": self.encoding_format,
-            "base_url": self.client.base_url
+            "base_url": self.client.base_url    # OpenAI客户端的一个属性，存储了 API 请求的基础 URL 地址
         }
 
 

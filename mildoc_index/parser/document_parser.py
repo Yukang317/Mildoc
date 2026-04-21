@@ -1,9 +1,10 @@
-from abc import ABC, abstractmethod
+# 抽象基类的基类；装饰器，用于定义抽象方法
+from abc import ABC, abstractmethod 
 
 class DocumentParser(ABC):
     """文档解析器抽象基类"""
     
-    @abstractmethod
+    @abstractmethod     # 装饰器标记这是一个抽象方法，子类必须实现
     def parse(self, data: bytes) -> str:
         """
         解析文档内容

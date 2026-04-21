@@ -1,6 +1,6 @@
 #! /bin/bash
 
-## start attu
+## start attu（Milvus 的可视化管理工具）
 docker run -d --rm  -p 8000:3000 --name attu26 zilliz/attu:v2.6
 
 ## stop attu
