@@ -1,0 +1,63 @@
+{
+    "name": "RAG系统多源异构文档测试集（Chunk级别标注）",
+    "description": "基于真实文档构建的测试数据集，采用Chunk级别标注，支持真正的文本块级别评估",
+    "version": "5.0",
+    "created_at": "2026-04-23",
+    "source": "manual",
+    "samples": [
+        {
+            "question": "我是一名怀孕7个月的软件测试工程师，最近公司要求我每天加班到晚上10点，请问公司这样做合法吗？",
+            "expected_doc_source": "劳动法.pdf",
+            "expected_chunks": [
+                {
+                    "chunk_id": "labor_law_chunk_15",
+                    "content": "第六十一条 对怀孕七个月以上的女职工，不得安排其延长工作时间和夜班劳动。",
+                    "doc_name": "劳动法.pdf"
+                },
+                {
+                    "chunk_id": "labor_law_chunk_16",
+                    "content": "用人单位违反本法规定，延长劳动者工作时间的，由劳动行政部门给予警告，责令改正，并可以处以罚款。",
+                    "doc_name": "劳动法.pdf"
+                }
+            ],
+            "ground_truth": "不合法。根据《劳动法》第六十一条，对怀孕七个月以上的女职工，不得安排其延长工作时间和夜班劳动。劳动者有权拒绝。",
+            "metadata": {"category": "法律应用", "difficulty": "中等", "scenario": "模糊查询"}
+        },
+        {
+            "question": "汇视威公司的一名试用期员工因重感冒请假3天但无法提供医院证明，这次请假会被如何处理？",
+            "expected_doc_source": "人事管理流程.docx",
+            "expected_chunks": [
+                {
+                    "chunk_id": "hr_process_chunk_08",
+                    "content": "病假需提供县级以上医院出具的诊断证明和病假条。无法提供证明的，按照事假计算。",
+                    "doc_name": "人事管理流程.docx"
+                },
+                {
+                    "chunk_id": "hr_process_chunk_12",
+                    "content": "试用期员工请事假原则上不允许超过3个工作日，特殊情况需经部门经理批准。",
+                    "doc_name": "人事管理流程.docx"
+                }
+            ],
+            "ground_truth": "因请假3天且无法提供医院证明，不符合要求的病假将按照事假计算。试用期员工请事假原则上不允许超过3个工作日，用人部门可酌情考虑是否继续留用。",
+            "metadata": {"category": "制度应用", "difficulty": "困难", "scenario": "隐含需求"}
+        },
+        {
+            "question": "公司年会抽奖奖品需要采购，预算有限，请问走什么流程比较合适？",
+            "expected_docs": ["财务管理文档.pdf", "人事管理流程.docx"],
+            "expected_chunks": [
+                {
+                    "chunk_id": "finance_chunk_05",
+                    "content": "采购申请流程：需求部门提出采购申请 → 财务部审核预算 → 总经理审批 → 采购执行",
+                    "doc_name": "财务管理文档.pdf"
+                },
+                {
+                    "chunk_id": "hr_process_chunk_20",
+                    "content": "人事行政部负责公司各类物资的统一采购和管理，包括办公用品、活动奖品等。",
+                    "doc_name": "人事管理流程.docx"
+                }
+            ],
+            "ground_truth": "根据公司制度：需求部门提出采购申请，财务部审核预算，走采购审批流程。人事行政部负责统一采购执行。",
+            "metadata": {"category": "跨文档对比", "difficulty": "困难", "scenario": "多文档综合"}
+        }
+    ]
+}

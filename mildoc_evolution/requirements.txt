@@ -1,0 +1,20 @@
+# RAGAS评估框架依赖
+ragas>=0.1.10
+datasets>=2.15.0
+langchain>=0.1.0
+langchain-community>=0.0.28
+langchain-openai>=0.1.0
+pandas>=2.1.0
+
+# 阿里云OSS依赖
+oss2>=2.18.0
+
+# Milvus依赖（可选，用于Chunk级评估）
+pymilvus>=2.3.0
+
+# 基础依赖
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# 报告生成
+markdown>=3.5.0

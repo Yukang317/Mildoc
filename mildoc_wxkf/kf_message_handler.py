@@ -48,7 +48,7 @@ class KfMessageHandler:
             
             logger.info(f"开始拉取客服消息 - OpenKfId: {open_kfid}, Cursor: {'有' if cursor else '无'}, Limit: {limit}")
             
-            # 拉取消息
+            # 拉取消息，这个cursor是我传入旧的，微信会返回新的cursor给我
             result = wecom_api.sync_kf_messages(token, open_kfid, cursor, limit)
             if not result:
                 logger.error("拉取客服消息失败")
@@ -422,6 +422,7 @@ class KfMessageHandler:
 
         try:
             # 调用智能客服接口，获取智能回复内容和token消耗情况
+            # ======================单例模式的全局获取RAG全局单例的方法===============
             response = get_rag_service().query_service(content)
 
             if response.success:

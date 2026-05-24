@@ -1,0 +1,45 @@
+{
+    "name": "RAG系统多源异构文档测试集",
+    "description": "基于四份真实文档构建的测试数据集，采用文档级标注，配合RAGAS框架进行自动化评估",
+    "version": "4.0",
+    "created_at": "2026-04-23",
+    "source": "manual",
+    "samples": [
+        {
+            "question": "我是一名怀孕7个月的软件测试工程师，最近公司要求我每天加班到晚上10点，请问公司这样做合法吗？",
+            "expected_doc_source": "劳动法.pdf",
+            "ground_truth": "不合法。根据《劳动法》第六十一条，对怀孕七个月以上的女职工，不得安排其延长工作时间和夜班劳动。劳动者有权拒绝。",
+            "metadata": {"category": "法律应用", "difficulty": "中等", "scenario": "模糊查询"}
+        },
+        {
+            "question": "汇视威公司的一名试用期员工因重感冒请假3天但无法提供医院证明，这次请假会被如何处理？",
+            "expected_doc_source": "人事管理流程.docx",
+            "ground_truth": "因请假3天且无法提供医院证明，不符合要求的病假将按照事假计算。试用期员工请事假原则上不允许超过3个工作日，用人部门可酌情考虑是否继续留用。",
+            "metadata": {"category": "制度应用", "difficulty": "困难", "scenario": "隐含需求"}
+        },
+        {
+            "question": "公司年会抽奖奖品需要采购，预算有限，请问走什么流程比较合适？",
+            "expected_docs": ["财务管理文档.pdf", "人事管理流程.docx"],
+            "ground_truth": "根据公司制度：需求部门提出采购申请，财务部审核预算，走采购审批流程。人事行政部负责统一采购执行。",
+            "metadata": {"category": "跨文档对比", "difficulty": "困难", "scenario": "多文档综合"}
+        },
+        {
+            "question": "如果员工在上班途中发生交通事故，算不算工伤？",
+            "expected_docs": ["劳动法.pdf", "人事管理流程.docx"],
+            "ground_truth": "根据《工伤保险条例》，在上下班途中，受到非本人主要责任的交通事故或者城市轨道交通、客运轮渡、火车事故伤害的，应当认定为工伤。",
+            "metadata": {"category": "法律应用", "difficulty": "困难", "scenario": "跨领域综合"}
+        },
+        {
+            "question": "我想申请提前转正，需要准备什么材料？",
+            "expected_doc_source": "人事管理流程.docx",
+            "ground_truth": "员工需填写《转正申请表》，附上试用期工作总结，经主管部门审批同意后，由人事行政部办理转正手续并备案。",
+            "metadata": {"category": "流程咨询", "difficulty": "简单", "scenario": "直接查询"}
+        },
+        {
+            "question": "在使用RAG技术构建智能客服时，为什么不仅要存储文本的向量，还要保留原始的关键词检索能力？",
+            "expected_doc_source": "【全球计算联盟GCC】向量数据库白皮书.pdf",
+            "ground_truth": "向量检索擅长语义匹配，但对精确术语、专有名词、缩写、数字、日期等字面匹配能力较弱。保留关键词检索能力（如BM25）可以有效补充向量检索的不足，构成\"混合搜索\"，兼顾语义相关性与字面准确性，提升检索鲁棒性。",
+            "metadata": {"category": "架构设计", "difficulty": "中等", "scenario": "概念理解"}
+        }
+    ]
+}

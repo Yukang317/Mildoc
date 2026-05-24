@@ -32,6 +32,13 @@ dependencies = [
     "python-dotenv==1.2.1",
     "pytz==2025.2",
     "requests==2.32.5",
+    # RAGAS评估框架依赖
+    "ragas>=0.1.10",
+    "datasets>=2.15.0",
+    "pandas>=2.1.0",
+    "oss2>=2.18.0",
+    "markdown>=3.5.0",
+    "rapidfuzz>=3.14.0",
 ]
 
 

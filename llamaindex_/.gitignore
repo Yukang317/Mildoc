@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.env
+.venv/
+core/.env  # 如果有子目录的 .env，单独忽略
+note.md
+
+# 日志文件
+*.log
+
+# 临时文件
+tmp/

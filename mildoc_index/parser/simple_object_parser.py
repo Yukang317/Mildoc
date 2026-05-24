@@ -147,8 +147,8 @@ class SimpleObjectParser:
         """
 
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size, 
-            chunk_overlap=self.overlap_size
+            chunk_size=self.chunk_size,         # 默认2048字符
+            chunk_overlap=self.overlap_size     # 默认128字符重叠
         )
         return text_splitter.split_text(text)
     
@@ -168,6 +168,7 @@ class SimpleObjectParser:
             # 先获取对象信息，检查文件大小
             logger.info(f"正在检查对象信息: {bucket_name}/{object_path}")
             try:
+                # 获取文件元数据（stat_object 是标准 S3 接口）
                 stat = self.minio_client.stat_object(bucket_name, object_path)  # 获取对象状态信息
                 file_size = stat.size  # 获取文件大小
                 max_size = 512 * 1024 * 1024  # 最大512MB
@@ -183,9 +184,11 @@ class SimpleObjectParser:
             
             # 从Minio获取对象
             logger.info(f"正在获取对象内容: {bucket_name}/{object_path}")
+              # 获取文件流（get_object 也是标准 S3 接口）
             response = self.minio_client.get_object(bucket_name, object_path)
             
             # 获取对象数据和元数据
+            # *********************读取/流式获取 - response.data (L191) 这一行，实际上是将 MinIO 服务器返回的文件流读取成了内存中的字节数据 (bytes)。
             data = response.data
             headers = response.headers
             
@@ -211,6 +214,7 @@ class SimpleObjectParser:
             
             # 解析文档内容
             logger.info(f"使用解析器: {parser.__class__.__name__}")  # 对象实例.获取对象的类.获取类的名称字符串
+            # *****************分发解析 - 得到 data (bytes) 后，simple_object_parser.py 会根据 object_name 的后缀 (pdf, docx, md) 来决定使用哪个具体的解析器 (PdfParser, OfficeParser, MarkdownParser)。
             text_content = parser.parse(data)
             
             if not text_content:

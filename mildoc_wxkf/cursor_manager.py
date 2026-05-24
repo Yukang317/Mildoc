@@ -31,7 +31,7 @@ class CursorManager:
             with sqlite3.connect(self.db_path) as conn:     # 连接数据库文件，如果文件不存在会自动创建，with语句结束时自动关闭连接
                 cursor = conn.cursor()  # 创建一个游标对象（这里的游标是数据库概念，相当于拿笔签字的人，不是企业微信的那个cursor）
                 
-                # 创建cursor存储表
+                # 创建cursor存储表，每次更新是用 INSERT OR REPLACE，覆盖旧记录，不会新增
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS kf_cursors (
                         open_kfid TEXT PRIMARY KEY,
@@ -125,6 +125,7 @@ class CursorManager:
                     db_cursor = conn.cursor() # 为了不和参数名cursor冲突，把数据库游标改名为db_cursor
                     
                     # 使用UPSERT语法，“有则更新，无则插入”，然后子查询：趁当前这行还没被删掉前，赶紧把它现在的 `message_count` 查出来
+                    # 每次更新是用 INSERT OR REPLACE，覆盖旧记录，不会新增
                     db_cursor.execute('''
                         INSERT OR REPLACE INTO kf_cursors 
                         (open_kfid, cursor, last_updated, message_count)

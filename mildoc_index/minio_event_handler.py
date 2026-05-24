@@ -232,7 +232,7 @@ class MinioEventHandler:
             for i, content in enumerate(parse_result['contents']):
                 try:
                     # 生成embedding向量
-                    embedding_vector = self.embedding_tool.get_embedding(content)
+                    embedding_vector = self.embeddign_tool.get_embedding(content)
                     if not embedding_vector:
                         logger.error(f"    片段 {i+1} embedding生成失败，跳过")
                         continue
